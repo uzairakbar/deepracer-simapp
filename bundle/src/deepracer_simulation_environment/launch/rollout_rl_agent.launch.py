@@ -27,7 +27,7 @@ def generate_launch_description():
     simapp_versions_arg = DeclareLaunchArgument('simapp_versions')
     kinesis_video_stream_names_arg = DeclareLaunchArgument('kinesis_video_stream_names', 
                                                           default_value=EnvironmentVariable('KINESIS_VIDEO_STREAM_NAME', default_value=''))
-    publish_to_kinesis_stream_arg = DeclareLaunchArgument('publish_to_kinesis_stream', default_value='true')
+    publish_to_kinesis_stream_arg = DeclareLaunchArgument('publish_to_kinesis_stream', default_value='false')
     gui_arg = DeclareLaunchArgument('gui', default_value='false')
     
     # Get package directory

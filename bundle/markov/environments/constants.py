@@ -26,7 +26,7 @@ TRAINING_LIDAR_SIZE = 64
 # Number of lidar sectors - to be used when filtering in observation_binary_filter
 NUMBER_OF_LIDAR_SECTORS = 8
 # Max clipping distance for sector lidar sensor
-SECTOR_LIDAR_CLIPPING_DIST = 0.5
+SECTOR_LIDAR_CLIPPING_DIST = 2.0
 
 LINK_NAMES = ['left_rear_wheel', 'left_front_wheel',
               'right_rear_wheel', 'right_front_wheel']

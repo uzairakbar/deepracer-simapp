@@ -155,7 +155,10 @@ class MultiAgentGraphManager(object):
         agents = OrderedDict()
         for agent_params in self.agents_params:
             agent_params.task_parameters = copy.copy(task_parameters)
-            agent = short_dynamic_import(agent_params.path)(agent_params)
+            # Uzair: Adding this as a communicator agent (ZMQ gym server) instead of
+            # the configured RL agent, so actions come from the external gym client.
+            # agent = short_dynamic_import(agent_params.path)(agent_params)
+            agent = short_dynamic_import('markov.gym_agent:GymAgent')(agent_params)
             agents[agent_params.name] = agent
             screen.log_title("Created agent: {}".format(agent_params.name))
             if hasattr(self, 'memory_backend_params') and \
@@ -269,7 +272,8 @@ class MultiAgentGraphManager(object):
                 self.checkpoint_saver[agent_params.name].update(level.collect_savers(agent_params.name))
 
         # restore from checkpoint if given
-        self.restore_checkpoint()
+        # Uzair: Checkpoint not needed for pure simulation (no trained model loaded).
+        # self.restore_checkpoint()
 
     def save_graph(self) -> None:
         """

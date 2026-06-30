@@ -187,17 +187,10 @@ def rollout_worker(graph_manager, num_workers, rollout_idx, task_parameters, sim
     camera_main_enable = utils.str2bool(WorldConfig.get_param("CAMERA_MAIN_ENABLE", "True"))
     camera_sub_enable = utils.str2bool(WorldConfig.get_param("CAMERA_SUB_ENABLE", "True"))    
     
-    try:
-        graph_manager.data_store.wait_for_checkpoints()
-    except Exception as e:
-        logger.error(f"Error waiting for checkpoints: {e}")
-        raise
-    
-    try:
-        graph_manager.data_store.wait_for_trainer_ready()
-    except Exception as e:
-        logger.error(f"Error waiting for trainer ready: {e}")
-        raise
+    # Uzair: checkpoint and training not needed for pure simulation. There is no
+    # trainer to wait for, and no checkpoints are produced.
+    # graph_manager.data_store.wait_for_checkpoints()
+    # graph_manager.data_store.wait_for_trainer_ready()
 
     # Make the clients that will allow us to pause and unpause the physics
     try:
@@ -234,24 +227,16 @@ def rollout_worker(graph_manager, num_workers, rollout_idx, task_parameters, sim
         logger.error(f"Error creating graph manager: {e}")
         raise
 
-    try:
-        chkpt_state_reader = CheckpointStateReader(checkpoint_dir, checkpoint_state_optional=False)
-    except Exception as e:
-        logger.error(f"Error creating checkpoint state reader: {e}")
-        raise
-    
-    try:
-        last_checkpoint = chkpt_state_reader.get_latest().num
-    except Exception as e:
-        logger.error(f"Error getting latest checkpoint: {e}")
-        raise
+    # Uzair: checkpoint not needed. No trained model is restored for pure simulation,
+    # so there is no checkpoint to read; default the counter to 0.
+    # chkpt_state_reader = CheckpointStateReader(checkpoint_dir, checkpoint_state_optional=False)
+    # last_checkpoint = chkpt_state_reader.get_latest().num
+    last_checkpoint = 0
 
-    # this worker should play a fraction of the total playing steps per rollout
-    episode_steps_per_rollout = graph_manager.agent_params.algorithm.num_consecutive_playing_steps.num_steps
-    act_steps = int(episode_steps_per_rollout / num_workers)
-    if rollout_idx < episode_steps_per_rollout % num_workers:
-        act_steps += 1
-    act_steps = EnvironmentEpisodes(act_steps)
+    # Uzair: Setting it to allow a large number of episodes to complete. Each act()
+    # call drives the ZMQ gym server, so this keeps the simulation serving the client
+    # indefinitely instead of stopping after a fixed rollout.
+    act_steps = EnvironmentEpisodes(1000000000)
 
     
     try:
@@ -268,7 +253,8 @@ def rollout_worker(graph_manager, num_workers, rollout_idx, task_parameters, sim
                             output_local_path=ROLLOUT_WORKER_PROFILER_PATH, enable_profiling=IS_PROFILER_ON):
             try:
                 graph_manager.phase = RunPhase.TRAIN
-                exit_if_trainer_done(checkpoint_dir, simtrace_video_s3_writers, rollout_idx)
+                # Uzair: Not using trainer; never check whether the (absent) trainer is done.
+                # exit_if_trainer_done(checkpoint_dir, simtrace_video_s3_writers, rollout_idx)
             except Exception as e:
                 logger.error(f"Error in train phase: {e}")
                 raise
@@ -754,22 +740,24 @@ def main():
         logger.error(f"Error creating phase observer: {e}")
         raise
 
-    # TODO: replace 'agent' with specific agent name for multi agent training
-    ip_config = IpConfig(bucket=args.s3_bucket,
-                         s3_prefix=args.s3_prefix,
-                         region_name=args.aws_region,
-                         s3_endpoint_url=args.s3_endpoint_url,       
-                         local_path=IP_ADDRESS_LOCAL_PATH.format('agent'))
-    redis_ip = ip_config.get_ip_config()
+    # Uzair: Not using redis. There is no training worker to discover an IP for.
+    # ip_config = IpConfig(bucket=args.s3_bucket,
+    #                      s3_prefix=args.s3_prefix,
+    #                      region_name=args.aws_region,
+    #                      s3_endpoint_url=args.s3_endpoint_url,
+    #                      local_path=IP_ADDRESS_LOCAL_PATH.format('agent'))
+    # redis_ip = ip_config.get_ip_config()
+    redis_ip = None
 
-    # Download hyperparameters from SageMaker shared s3 bucket
-    # TODO: replace 'agent' with name of each agent
-    hyperparameters = Hyperparameters(bucket=args.s3_bucket,
-                                      s3_key=get_s3_key(args.s3_prefix, HYPERPARAMETER_S3_POSTFIX),
-                                      region_name=args.aws_region,
-                                      s3_endpoint_url=args.s3_endpoint_url,
-                                      local_path=HYPERPARAMETER_LOCAL_PATH_FORMAT.format('agent'))
-    sm_hyperparams_dict = hyperparameters.get_hyperparameters_dict()
+    # Uzair: hyperparameters file not provided. Actions come from the external gym
+    # client, so no training hyperparameters are needed.
+    # hyperparameters = Hyperparameters(bucket=args.s3_bucket,
+    #                                   s3_key=get_s3_key(args.s3_prefix, HYPERPARAMETER_S3_POSTFIX),
+    #                                   region_name=args.aws_region,
+    #                                   s3_endpoint_url=args.s3_endpoint_url,
+    #                                   local_path=HYPERPARAMETER_LOCAL_PATH_FORMAT.format('agent'))
+    # sm_hyperparams_dict = hyperparameters.get_hyperparameters_dict()
+    sm_hyperparams_dict = {}
 
     enable_domain_randomization = utils.str2bool(WorldConfig.get_param('ENABLE_DOMAIN_RANDOMIZATION', False))
     
@@ -823,14 +811,16 @@ def main():
         utils.stop_ros_node_monitor()
         return
 
-    memory_backend_params = DeepRacerRedisPubSubMemoryBackendParameters(redis_address=redis_ip,
-                                                                        redis_port=6379,
-                                                                        run_type=str(RunType.ROLLOUT_WORKER),
-                                                                        channel=args.s3_prefix,
-                                                                        num_workers=args.num_workers,
-                                                                        rollout_idx=args.rollout_idx)
-
-    graph_manager.memory_backend_params = memory_backend_params
+    # Uzair: Not using redis memory backend. Leaving graph_manager.memory_backend_params
+    # unset skips the rollout pub/sub backend wiring in _create_graph (no trainer to
+    # publish episodes to).
+    # memory_backend_params = DeepRacerRedisPubSubMemoryBackendParameters(redis_address=redis_ip,
+    #                                                                     redis_port=6379,
+    #                                                                     run_type=str(RunType.ROLLOUT_WORKER),
+    #                                                                     channel=args.s3_prefix,
+    #                                                                     num_workers=args.num_workers,
+    #                                                                     rollout_idx=args.rollout_idx)
+    # graph_manager.memory_backend_params = memory_backend_params
 
     checkpoint_dict = {'agent': checkpoint}
     ds_params_instance = S3BotoDataStoreParameters(checkpoint_dict=checkpoint_dict)

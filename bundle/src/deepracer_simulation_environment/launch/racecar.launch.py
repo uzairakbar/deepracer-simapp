@@ -39,7 +39,7 @@ def generate_launch_description():
     lidar_360_degree_min_angle_arg = DeclareLaunchArgument('lidar_360_degree_min_angle', default_value='-2.61799')
     lidar_360_degree_max_angle_arg = DeclareLaunchArgument('lidar_360_degree_max_angle', default_value='2.61799')
     lidar_360_degree_min_range_arg = DeclareLaunchArgument('lidar_360_degree_min_range', default_value='0.15')
-    lidar_360_degree_max_range_arg = DeclareLaunchArgument('lidar_360_degree_max_range', default_value='12.0')
+    lidar_360_degree_max_range_arg = DeclareLaunchArgument('lidar_360_degree_max_range', default_value='2.0')
     lidar_360_degree_range_resolution_arg = DeclareLaunchArgument('lidar_360_degree_range_resolution', default_value='0.01')
     lidar_360_degree_noise_mean_arg = DeclareLaunchArgument('lidar_360_degree_noise_mean', default_value='0.0')
     lidar_360_degree_noise_stddev_arg = DeclareLaunchArgument('lidar_360_degree_noise_stddev', default_value='0.01')

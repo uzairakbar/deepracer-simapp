@@ -30,6 +30,34 @@ from markov.log_handler.logger import Logger
 logger = Logger(__name__, logging.INFO).get_logger()
 
 
+def response(agent, env, env_response):
+    """Enrich the env_response.info dict consumed by the external gym client with the
+    reward parameters and per-rule episode status of the agent that matches the racecar.
+    Ported from the legacy P4 deepracer container patch (environment_response.py).
+    """
+    reward_params = {}
+    episode_status = {}
+    for env_agent in env.agent_list:
+        agent_id = (
+            'agent' if len(agent.name.split('_')) <= 1
+            else agent.name.split('_')[-1]
+        )
+        racecar_id = (
+            'racecar' if len(env_agent.ctrl._agent_name_.split('_')) <= 1
+            else env_agent.ctrl._agent_name_.split('_')[-1]
+        )
+        if (
+            (agent_id == racecar_id)
+            or
+            (agent_id == 'agent' and racecar_id == 'racecar')
+        ):
+            reward_params = env_agent.ctrl._reward_params_
+            episode_status = env_agent.ctrl._reset_rules_manager.get_dones()
+    env_response.info['reward_params'] = reward_params
+    env_response.info['episode_status'] = episode_status
+    return env_response
+
+
 class MultiAgentLevelManager(EnvironmentInterface):
     """
     The LevelManager is in charge of managing a level in the hierarchy of control. Each level can have one or more
@@ -279,7 +307,7 @@ class MultiAgentLevelManager(EnvironmentInterface):
         for i in range(self.steps_limit.num_steps):
             
             # let the agent observe the result and decide if it wants to terminate the episode
-            observe_results = [agent.observe(env_response) for agent, env_response in zip(self.agents.values(), env_responses)]
+            observe_results = [agent.observe(response(agent, self.environment, env_response)) for agent, env_response in zip(self.agents.values(), env_responses)]
             done = self.done_condition(observe_results)
             
             if done:
@@ -323,7 +351,7 @@ class MultiAgentLevelManager(EnvironmentInterface):
         if done or self.should_reset_agent_state_after_time_limit_passes:
             # this is the agent's only opportunity to observe this transition - he will not get another one
             # final_observe_start = time.time()
-            [agent.observe(env_response) for agent, env_response in zip(self.agents.values(), env_responses)]
+            [agent.observe(response(agent, self.environment, env_response)) for agent, env_response in zip(self.agents.values(), env_responses)]
             # final_observe_end = time.time()
             
             self.handle_episode_ended()

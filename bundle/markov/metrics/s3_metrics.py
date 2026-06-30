@@ -267,7 +267,9 @@ class TrainingMetrics(MetricsInterface, ObserverInterface, AbstractTracker):
         self._best_model_metric_type = BestModelMetricType(WorldConfig.get_param('BEST_MODEL_METRIC',
                                                                            BestModelMetricType.PROGRESS.value).lower())
         self.track_data = TrackData.get_instance()
-        run_phase_sink.register(self)
+        # Uzair: prevent update checkpoint being called on runphase change. In pure
+        # simulation there is no checkpoint to update when the run phase changes.
+        # run_phase_sink.register(self)
         # Create the agent specific directories needed for storing the metric files
         self._simtrace_iteration_local_path = SIMTRACE_TRAINING_LOCAL_PATH_FORMAT.format(self._agent_name_)
         simtrace_iteration_dirname = os.path.dirname(self._simtrace_iteration_local_path)

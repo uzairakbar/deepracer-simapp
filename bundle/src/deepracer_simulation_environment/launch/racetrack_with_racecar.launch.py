@@ -99,8 +99,8 @@ def generate_launch_description():
     )
     
     publish_to_kinesis_stream_arg = DeclareLaunchArgument(
-        'publish_to_kinesis_stream', 
-        default_value='true',
+        'publish_to_kinesis_stream',
+        default_value='false',
         description='Enable publishing to Kinesis stream'
     )
     

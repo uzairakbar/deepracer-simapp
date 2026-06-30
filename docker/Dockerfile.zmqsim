@@ -1,0 +1,45 @@
+# syntax=docker/dockerfile:1
+###############################################################################
+# uzairakbar/deepracer:v1 — pure-simulation overlay
+#
+# Thin layer on top of the modern CPU deepracer-simapp image. The markov
+# source edits (GymAgent injection, training/redis neutering, info enrichment,
+# sensor/launch tweaks) are already compiled into the base bundle; this layer
+# only adds the standalone runtime needed to serve P4_deepracer over ZMQ:
+#   - in-container MinIO (self-contained S3, like the legacy v0 container)
+#   - yq (yaml templating in the entrypoint)
+#   - pyzmq / msgpack / msgpack_numpy in the sagemaker_env conda env
+#   - the sim-only entrypoint
+#
+# Build the base first (with the edited source), e.g.:
+#   ./build.sh -a cpu
+# then:
+#   docker build -f docker/Dockerfile.zmqsim -t uzairakbar/deepracer:v1 .
+###############################################################################
+ARG BASE_IMAGE=awsdeepracercommunity/deepracer-simapp:6.0.5-cpu-amd64
+FROM ${BASE_IMAGE}
+
+ARG TARGETARCH=amd64
+
+# yq (mikefarah) for yaml templating in the entrypoint
+RUN curl -fsSL "https://github.com/mikefarah/yq/releases/latest/download/yq_linux_${TARGETARCH}" \
+        -o /usr/bin/yq && chmod +x /usr/bin/yq
+
+# MinIO server + client for the in-container S3 endpoint
+RUN curl -fsSL "https://dl.min.io/server/minio/release/linux-${TARGETARCH}/minio" \
+        -o /usr/bin/minio && chmod +x /usr/bin/minio && \
+    curl -fsSL "https://dl.min.io/client/mc/release/linux-${TARGETARCH}/mc" \
+        -o /usr/bin/mc && chmod +x /usr/bin/mc
+
+# ZMQ / msgpack stack into the sagemaker_env conda environment
+RUN /root/anaconda/envs/sagemaker_env/bin/pip install --no-cache-dir \
+        pyzmq msgpack msgpack_numpy
+
+# Sim-only entrypoint + standard mount points
+COPY docker/files/ml-code/entrypoint.sh /opt/ml/code/entrypoint.sh
+RUN chmod +x /opt/ml/code/entrypoint.sh && \
+    mkdir -p /configs /opt/ml/s3data && \
+    mkdir -p /tmp/.X11-unix && chmod 1777 /tmp/.X11-unix
+
+WORKDIR /opt/ml/code
+ENTRYPOINT ["/opt/ml/code/entrypoint.sh"]

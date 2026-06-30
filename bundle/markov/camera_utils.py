@@ -108,14 +108,14 @@ def configure_camera(namespaces=None, is_wait_for_model=True):
                 
                 start_time = time.time()
                 main_cameras[namespace] = CameraFactory.create_instance(camera_type=main_camera_type,
-                                                                        model_name="/{}/{}".format(namespace,
-                                                                                                   "main_camera"),
+                                                                        model_name="{}/{}".format(namespace,
+                                                                                                  "main_camera"),
                                                                         namespace=namespace)
                 end_time = time.time()
                 
             start_time = time.time()
             sub_camera = CameraFactory.create_instance(camera_type=sub_camera_type,
-                                                       model_name="/{}".format("sub_camera"),
+                                                       model_name="{}".format("sub_camera"),
                                                        namespace=namespace)
             end_time = time.time()
             return main_cameras, sub_camera
