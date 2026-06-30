@@ -13,7 +13,11 @@ cd "$(dirname "$0")"
 
 PREFIX="awsdeepracercommunity"
 VERSION="$(jq -r '.simapp' VERSION)"
-OUT_IMAGE="uzairakbar/deepracer:v1"
+# Output image is overridable so CI can tag per-architecture (e.g.
+# uzairakbar/deepracer-test:v0-amd64). Set PUSH=1 to push it after building.
+# Note: Docker repository names must be lowercase.
+OUT_IMAGE="${OUT_IMAGE:-uzairakbar/deepracer:v1}"
+PUSH="${PUSH:-0}"
 
 # Default to the host architecture (native build, no emulation). Override with
 # ARCH=amd64 to produce the P4-compatible image (slow under emulation on arm64).
@@ -44,5 +48,10 @@ DOCKER_BUILDKIT=0 docker build . --platform "${PLATFORM}" \
     --build-arg BASE_IMAGE="${BASE_IMAGE}" \
     --build-arg TARGETARCH="${TARGET_ARCH}" \
     -t "${OUT_IMAGE}"
+
+if [ "${PUSH}" = "1" ]; then
+    echo "==> Pushing ${OUT_IMAGE}..."
+    docker push "${OUT_IMAGE}"
+fi
 
 echo "==> Done: ${OUT_IMAGE}"

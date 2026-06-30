@@ -1,0 +1,84 @@
+name: build-and-push deepracer ZMQ sim image
+
+# Builds the pure-simulation image (docker/Dockerfile.zmqsim) for amd64 and arm64
+# on native runners (no emulation), pushes per-arch tags, then stitches a
+# multi-arch manifest so `docker pull <image>:<tag>` auto-selects the host arch.
+#
+# Required repo secrets:
+#   DOCKERHUB_USERNAME  - Docker Hub user
+#   DOCKERHUB_TOKEN     - Docker Hub access token (write scope)
+#
+# Note: ubuntu-24.04-arm is a free native arm64 runner for PUBLIC repos. For a
+# private repo without arm runners, drop the arm64 matrix entry (amd64-only) or
+# build arm64 via emulation on ubuntu-24.04 (slower).
+
+on:
+  workflow_dispatch:
+    inputs:
+      image:
+        description: "Image repository (no tag)"
+        default: uzairakbar/deepracer-test
+      tag:
+        description: "Image tag"
+        default: v0
+
+env:
+  IMAGE: ${{ github.event.inputs.image || 'uzairakbar/deepracer-test' }}
+  TAG: ${{ github.event.inputs.tag || 'v0' }}
+
+jobs:
+  build:
+    name: build ${{ matrix.arch }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: amd64
+            runner: ubuntu-24.04
+          - arch: arm64
+            runner: ubuntu-24.04-arm
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 180
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Free disk space
+        uses: jlumbroso/free-disk-space@main
+        with:
+          tool-cache: true
+          android: true
+          dotnet: true
+          haskell: true
+          large-packages: true
+          swap-storage: false
+
+      - name: Log in to Docker Hub
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      - name: Build and push per-arch image
+        env:
+          ARCH: ${{ matrix.arch }}
+          OUT_IMAGE: ${{ env.IMAGE }}:${{ env.TAG }}-${{ matrix.arch }}
+          PUSH: "1"
+        run: ./build-zmqsim.sh
+
+  manifest:
+    name: multi-arch manifest
+    needs: build
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Log in to Docker Hub
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      - name: Create and push manifest
+        run: |
+          docker buildx imagetools create -t "${IMAGE}:${TAG}" \
+            "${IMAGE}:${TAG}-amd64" \
+            "${IMAGE}:${TAG}-arm64"
+          docker buildx imagetools inspect "${IMAGE}:${TAG}"
