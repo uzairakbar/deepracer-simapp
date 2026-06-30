@@ -69,15 +69,31 @@ export MINIO_ROOT_USER=minioadmin
 export MINIO_ROOT_PASSWORD=minioadmin
 export AWS_ACCESS_KEY_ID=${MINIO_ROOT_USER}
 export AWS_SECRET_ACCESS_KEY=${MINIO_ROOT_PASSWORD}
-export S3_ENDPOINT_URL=http://127.0.0.1:9000
 S3_DATA_DIR=/opt/ml/s3data
+
+# Derive per-user MinIO ports. Apptainer shares the host network namespace, so a
+# fixed port (e.g. 9000) collides with other users/services on a shared node. Hash
+# the username to a stable port in the same way start_deepracer.sh picks GYM_PORT.
+# (Under Docker the network is isolated, so this is simply harmless.)
+string_to_port() {
+    local hash hash_prefix
+    local port_range=$((32767 - 1024 + 1))
+    hash=$(echo -n "$1" | sha256sum | awk '{print $1}')
+    hash_prefix=${hash:0:8}
+    echo $((1024 + (16#$hash_prefix % port_range)))
+}
+MINIO_USER_KEY="${USER:-deepracer}"
+MINIO_PORT=$(string_to_port "MINIO_API_${MINIO_USER_KEY}")
+MINIO_CONSOLE_PORT=$(string_to_port "MINIO_CON_${MINIO_USER_KEY}")
+export S3_ENDPOINT_URL="http://127.0.0.1:${MINIO_PORT}"
 
 # --------------------------------------------------------------------------- #
 # Start in-container MinIO and create the bucket
 # --------------------------------------------------------------------------- #
 mkdir -p "${S3_DATA_DIR}"
-echo "Starting MinIO at ${S3_ENDPOINT_URL} (data: ${S3_DATA_DIR})"
-minio server "${S3_DATA_DIR}" --address ":9000" > /opt/ml/minio.log 2>&1 &
+echo "Starting MinIO at ${S3_ENDPOINT_URL} (console :${MINIO_CONSOLE_PORT}, data: ${S3_DATA_DIR})"
+minio server "${S3_DATA_DIR}" --address ":${MINIO_PORT}" \
+    --console-address ":${MINIO_CONSOLE_PORT}" > /opt/ml/minio.log 2>&1 &
 # wait for MinIO to accept connections
 for i in $(seq 1 30); do
     if aws --endpoint-url "${S3_ENDPOINT_URL}" s3 ls > /dev/null 2>&1; then
