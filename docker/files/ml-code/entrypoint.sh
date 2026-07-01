@@ -29,6 +29,23 @@ export ROS_IP=127.0.0.1
 export ENABLE_KINESIS=false
 export ENABLE_GUI=false
 
+# Per-user ROS 2 DDS isolation. Apptainer shares the host network namespace
+# (Docker does not), so on a shared node (PACE) every user's nodes default to
+# ROS_DOMAIN_ID=0 and discover each other over DDS -> cross-talk that corrupts
+# topics/params. Give each user a distinct domain and restrict discovery to this
+# host so we never reach nodes on other compute nodes. All processes in THIS
+# container inherit these (exported before the launch), so intra-container comms
+# are unaffected.
+ros_domain_from_user() {
+    local hash
+    hash=$(echo -n "ROS_DOMAIN_${1}" | sha256sum | awk '{print $1}')
+    # ROS 2 safe domain range is 1..101 (0 reserved as the shared default).
+    echo $((1 + (16#${hash:0:8} % 101)))
+}
+export ROS_DOMAIN_ID=$(ros_domain_from_user "${USER:-deepracer}")
+export ROS_AUTOMATIC_DISCOVERY_RANGE=LOCALHOST
+echo "ROS_DOMAIN_ID: ${ROS_DOMAIN_ID} (discovery range: ${ROS_AUTOMATIC_DISCOVERY_RANGE})"
+
 export PATH="/opt/ml/:$PATH"
 export PYTHONPATH="/opt/ml/code"
 
@@ -71,20 +88,26 @@ export AWS_ACCESS_KEY_ID=${MINIO_ROOT_USER}
 export AWS_SECRET_ACCESS_KEY=${MINIO_ROOT_PASSWORD}
 S3_DATA_DIR=/opt/ml/s3data
 
-# Derive per-user MinIO ports. Apptainer shares the host network namespace, so a
-# fixed port (e.g. 9000) collides with other users/services on a shared node. Hash
-# the username to a stable port in the same way start_deepracer.sh picks GYM_PORT.
-# (Under Docker the network is isolated, so this is simply harmless.)
-string_to_port() {
-    local hash hash_prefix
-    local port_range=$((32767 - 1024 + 1))
-    hash=$(echo -n "$1" | sha256sum | awk '{print $1}')
-    hash_prefix=${hash:0:8}
-    echo $((1024 + (16#$hash_prefix % port_range)))
-}
-MINIO_USER_KEY="${USER:-deepracer}"
-MINIO_PORT=$(string_to_port "MINIO_API_${MINIO_USER_KEY}")
-MINIO_CONSOLE_PORT=$(string_to_port "MINIO_CON_${MINIO_USER_KEY}")
+# Pick free, non-colliding MinIO ports. Apptainer shares the host network
+# namespace (Docker does not), so any fixed port (e.g. 9000) -- or even a
+# per-user hashed port -- can already be held by another user or an unrelated
+# service on a shared node (PACE), and hashing offers no way to detect that.
+# MinIO is purely container-internal (reached only via the derived
+# S3_ENDPOINT_URL below), so it needs a *free* port, not a *predictable* one:
+# ask the OS for two currently-free ports in a single bind so they can never
+# collide with each other or with anything else, and never fall back to 9000.
+free_ports=$(python3 - <<'PY'
+import socket
+socks = [socket.socket() for _ in range(2)]
+for s in socks:
+    s.bind(("127.0.0.1", 0))
+print(" ".join(str(s.getsockname()[1]) for s in socks))
+for s in socks:
+    s.close()
+PY
+)
+MINIO_PORT=${free_ports%% *}
+MINIO_CONSOLE_PORT=${free_ports##* }
 export S3_ENDPOINT_URL="http://127.0.0.1:${MINIO_PORT}"
 
 # --------------------------------------------------------------------------- #
