@@ -66,8 +66,8 @@
         <camera_info_topic>/$(arg racecar_name)/camera/zed/camera_info</camera_info_topic>
         <horizontal_fov>1.13</horizontal_fov>
         <image>
-          <width>640</width>
-          <height>480</height>
+          <width>160</width>
+          <height>120</height>
           <format>R8G8B8</format>
         </image>
         <clip>
@@ -92,8 +92,8 @@
         <camera_info_topic>/$(arg racecar_name)/camera/zed/camera_info</camera_info_topic>
         <horizontal_fov>1.13</horizontal_fov>
         <image>
-          <width>640</width>
-          <height>480</height>
+          <width>160</width>
+          <height>120</height>
           <format>R8G8B8</format>
         </image>
         <clip>
@@ -116,8 +116,8 @@
         <camera_info_topic>/$(arg racecar_name)/camera/zed_right/camera_info</camera_info_topic>
         <horizontal_fov>1.13</horizontal_fov>
         <image>
-          <width>640</width>
-          <height>480</height>
+          <width>160</width>
+          <height>120</height>
           <format>R8G8B8</format>
         </image>
         <clip>
