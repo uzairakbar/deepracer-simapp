@@ -112,8 +112,13 @@ S3_ROOT="/${S3_BUCKET}"
 REWARD_FUNCTION_S3_KEY=${S3_PREFIX}/custom_reward_function.py
 MODEL_METADATA_S3_KEY=${S3_PREFIX}/model/model_metadata.json
 
-# Stage config files where the FS shim expects them: /<bucket>/<key>.
-mkdir -p "${S3_ROOT}/${S3_PREFIX}/model"
+# Stage config files where the FS shim expects them: /<bucket>/<key>. The dir
+# tree is BAKED into the image (Dockerfile.zmqsim) because creating new nested
+# directories at the container root fails under Apptainer's fuse-overlayfs
+# ("Operation not permitted"); writing files into a pre-existing dir via the
+# overlay works fine (same trick the legacy v0 image used). So this is a
+# no-op when the baked tree is present, and must never be fatal.
+mkdir -p "${S3_ROOT}/${S3_PREFIX}/model" 2>/dev/null || true
 
 # model_metadata == agent_params.json (action space / sensors / network)
 cp /configs/agent_params.json "${S3_ROOT}/${MODEL_METADATA_S3_KEY}"

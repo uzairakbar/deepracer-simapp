@@ -29,10 +29,15 @@ RUN curl -fsSL "https://github.com/mikefarah/yq/releases/latest/download/yq_linu
 RUN /root/anaconda/envs/sagemaker_env/bin/pip install --no-cache-dir \
         pyzmq msgpack msgpack_numpy
 
-# Sim-only entrypoint + standard mount points
+# Sim-only entrypoint + standard mount points.
+# Bake the local-FS "S3" bucket tree into the image: Apptainer's fuse-overlayfs
+# rejects creating new nested dirs at the container root at runtime, but writing
+# files into a pre-existing dir via the overlay works. Keep this path in sync
+# with S3_BUCKET/S3_PREFIX in entrypoint.sh (bucket / sagemaker-rlexp-deepracer-prefix).
 COPY docker/files/ml-code/entrypoint.sh /opt/ml/code/entrypoint.sh
 RUN chmod +x /opt/ml/code/entrypoint.sh && \
     mkdir -p /configs && \
+    mkdir -p /bucket/sagemaker-rlexp-deepracer-prefix/model && \
     mkdir -p /tmp/.X11-unix && chmod 1777 /tmp/.X11-unix
 
 WORKDIR /opt/ml/code
