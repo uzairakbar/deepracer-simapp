@@ -12,7 +12,8 @@
 # code expects, populated from the mounted /configs directory. No external
 # trainer, no redis, no real AWS.
 #
-# Ported from P4_deepracer/patches/launch-simapp-rosnodes.sh.
+# Ported from the legacy launch-simapp-rosnodes.sh (formerly P4_deepracer/patches/,
+# since removed once its behavior was baked into this image).
 ###############################################################################
 set -e
 echo "Starting deepracer v1 pure-simulation entrypoint."
@@ -57,6 +58,12 @@ export PYTHONPATH="/opt/ml/code"
 source /opt/ros/${ROS_DISTRO}/setup.bash
 source /opt/amazon/install/setup.bash
 source /root/anaconda/bin/activate sagemaker_env
+
+# Run from /opt/ml/code so relative paths in the launch chain resolve (e.g.
+# download_params writes ./custom_files here). The image sets WORKDIR to this,
+# but Apptainer does not honour a Docker WORKDIR and its `instance run` has no
+# --pwd, so make the entrypoint self-contained and cd here explicitly.
+cd /opt/ml/code
 
 # --------------------------------------------------------------------------- #
 # World / object config from the mounted /configs (yq)
