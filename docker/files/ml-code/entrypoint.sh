@@ -24,6 +24,11 @@ export ROS_DISTRO=jazzy
 export PYTHONUNBUFFERED=1
 export XAUTHORITY=/root/.Xauthority
 export TF_CPP_MIN_LOG_LEVEL=3
+# Force a headless matplotlib backend. Apptainer inherits the host environment,
+# so a value leaked from a Jupyter kernel (MPLBACKEND=module://matplotlib_inline
+# .backend_inline) crashes matplotlib on import (pulled in via TF->keras) outside
+# IPython, killing the rollout worker. Agg is always valid and needs no display.
+export MPLBACKEND=Agg
 export DEEPRACER_JOB_TYPE_ENV="SAGEONLY"
 export ROS_IP=127.0.0.1
 export ENABLE_KINESIS=false
