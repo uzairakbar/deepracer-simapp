@@ -52,6 +52,16 @@ export ROS_DOMAIN_ID=$(ros_domain_from_user "${USER:-deepracer}")
 export ROS_AUTOMATIC_DISCOVERY_RANGE=LOCALHOST
 echo "ROS_DOMAIN_ID: ${ROS_DOMAIN_ID} (discovery range: ${ROS_AUTOMATIC_DISCOVERY_RANGE})"
 
+# Per-user Gazebo (gz-transport) isolation -- the Harmonic analogue of the DDS
+# domain above. On a shared host network (Apptainer) two users' gz-sim instances
+# discover each other unless partitioned; namespace by user and advertise only on
+# loopback. Container-internal, so it is a harmless default under Docker and the
+# real isolation under Apptainer (mirrors MinIO / ROS_DOMAIN_ID). $USER is the
+# host user under Apptainer and unset->'deepracer' under (network-isolated) Docker.
+export GZ_PARTITION="${USER:-deepracer}"
+export GZ_IP=127.0.0.1
+echo "GZ_PARTITION: ${GZ_PARTITION} (GZ_IP: ${GZ_IP})"
+
 export PATH="/opt/ml/:$PATH"
 export PYTHONPATH="/opt/ml/code"
 
