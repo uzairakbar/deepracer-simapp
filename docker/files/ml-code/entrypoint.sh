@@ -95,68 +95,28 @@ NUMBER_OF_OBSTACLES=$(yq .NUMBER_OF_OBSTACLES /configs/environment_params.yaml)
 NUMBER_OF_BOT_CARS=$(yq .NUMBER_OF_BOT_CARS /configs/environment_params.yaml)
 
 # --------------------------------------------------------------------------- #
-# S3 identifiers (local MinIO bucket)
+# Local-filesystem "S3" (no MinIO). The markov boto S3 client is shimmed to read
+# and write keys as plain files under /<bucket>/<key>
+# (markov/boto/deepracer_boto_client.py: BotoClientLocalFileSystemWrapper). This
+# mirrors the legacy v0 image and removes the fragile in-container MinIO HTTP
+# round-trip (source of truncated-download crashes on shared HPC nodes). No
+# server, no ports, no endpoint, no credentials.
 # --------------------------------------------------------------------------- #
 export AWS_REGION=us-east-1
 export APP_REGION=${AWS_REGION}
 S3_BUCKET="bucket"
 SM_JOBNAME="rlexp-deepracer-prefix"
 S3_PREFIX="sagemaker-${SM_JOBNAME}"
+S3_ROOT="/${S3_BUCKET}"
 
-# MinIO credentials / endpoint used by the markov boto S3 client
-export MINIO_ROOT_USER=minioadmin
-export MINIO_ROOT_PASSWORD=minioadmin
-export AWS_ACCESS_KEY_ID=${MINIO_ROOT_USER}
-export AWS_SECRET_ACCESS_KEY=${MINIO_ROOT_PASSWORD}
-S3_DATA_DIR=/opt/ml/s3data
-
-# Pick free, non-colliding MinIO ports. Apptainer shares the host network
-# namespace (Docker does not), so any fixed port (e.g. 9000) -- or even a
-# per-user hashed port -- can already be held by another user or an unrelated
-# service on a shared node (PACE), and hashing offers no way to detect that.
-# MinIO is purely container-internal (reached only via the derived
-# S3_ENDPOINT_URL below), so it needs a *free* port, not a *predictable* one:
-# ask the OS for two currently-free ports in a single bind so they can never
-# collide with each other or with anything else, and never fall back to 9000.
-free_ports=$(python3 - <<'PY'
-import socket
-socks = [socket.socket() for _ in range(2)]
-for s in socks:
-    s.bind(("127.0.0.1", 0))
-print(" ".join(str(s.getsockname()[1]) for s in socks))
-for s in socks:
-    s.close()
-PY
-)
-MINIO_PORT=${free_ports%% *}
-MINIO_CONSOLE_PORT=${free_ports##* }
-export S3_ENDPOINT_URL="http://127.0.0.1:${MINIO_PORT}"
-
-# --------------------------------------------------------------------------- #
-# Start in-container MinIO and create the bucket
-# --------------------------------------------------------------------------- #
-mkdir -p "${S3_DATA_DIR}"
-echo "Starting MinIO at ${S3_ENDPOINT_URL} (console :${MINIO_CONSOLE_PORT}, data: ${S3_DATA_DIR})"
-minio server "${S3_DATA_DIR}" --address ":${MINIO_PORT}" \
-    --console-address ":${MINIO_CONSOLE_PORT}" > /opt/ml/minio.log 2>&1 &
-# wait for MinIO to accept connections
-for i in $(seq 1 30); do
-    if aws --endpoint-url "${S3_ENDPOINT_URL}" s3 ls > /dev/null 2>&1; then
-        break
-    fi
-    sleep 1
-done
-aws --endpoint-url "${S3_ENDPOINT_URL}" s3 mb "s3://${S3_BUCKET}" 2>/dev/null || true
-
-# --------------------------------------------------------------------------- #
-# Populate the bucket: model_metadata, reward function, training params yaml
-# --------------------------------------------------------------------------- #
 REWARD_FUNCTION_S3_KEY=${S3_PREFIX}/custom_reward_function.py
 MODEL_METADATA_S3_KEY=${S3_PREFIX}/model/model_metadata.json
 
+# Stage config files where the FS shim expects them: /<bucket>/<key>.
+mkdir -p "${S3_ROOT}/${S3_PREFIX}/model"
+
 # model_metadata == agent_params.json (action space / sensors / network)
-aws --endpoint-url "${S3_ENDPOINT_URL}" s3 cp \
-    /configs/agent_params.json "s3://${S3_BUCKET}/${MODEL_METADATA_S3_KEY}"
+cp /configs/agent_params.json "${S3_ROOT}/${MODEL_METADATA_S3_KEY}"
 
 # reward function: P4 computes reward client-side, so the container copy is a
 # placeholder; use the mounted one if present.
@@ -165,8 +125,7 @@ if [ ! -f "${REWARD_SRC}" ]; then
     REWARD_SRC=/opt/ml/code/zmq_default_reward_function.py
     printf 'def reward_function(params):\n    return 1.0\n' > "${REWARD_SRC}"
 fi
-aws --endpoint-url "${S3_ENDPOINT_URL}" s3 cp \
-    "${REWARD_SRC}" "s3://${S3_BUCKET}/${REWARD_FUNCTION_S3_KEY}"
+cp "${REWARD_SRC}" "${S3_ROOT}/${REWARD_FUNCTION_S3_KEY}"
 
 # Build training_params.yaml (defaults merged with /configs overrides), ported
 # from the legacy launch-simapp-rosnodes.sh.
@@ -175,9 +134,6 @@ DEFAULT_YAML=/opt/ml/code/default_training_params.yaml
 echo "WORLD_NAME:                           \"${WORLD_NAME}\""
 echo "SAGEMAKER_SHARED_S3_BUCKET:           \"${S3_BUCKET}\""
 echo "SAGEMAKER_SHARED_S3_PREFIX:           \"${S3_PREFIX}\""
-# in-container MinIO endpoint, read by markov via WorldConfig.get_param so the
-# rollout worker (and its boto S3 clients) talk to local MinIO, not real AWS.
-echo "S3_ENDPOINT_URL:                      \"${S3_ENDPOINT_URL}\""
 echo "TRAINING_JOB_ARN:                     \"local-sim\""
 echo "METRICS_S3_BUCKET:                    \"${S3_BUCKET}\""
 echo "METRICS_S3_OBJECT_KEY:                \"${S3_PREFIX}/training_metrics.json\""
@@ -219,8 +175,7 @@ SOURCE_YAML=/configs/environment_params.yaml
 # merge defaults (file 0) with /configs overrides (file 1)
 yq eval-all 'select(fileIndex == 0) * select(fileIndex == 1)' "${DEFAULT_YAML}" "${SOURCE_YAML}" \
     > "/opt/ml/code/${S3_YAML_NAME}"
-aws --endpoint-url "${S3_ENDPOINT_URL}" s3 cp \
-    "/opt/ml/code/${S3_YAML_NAME}" "s3://${S3_BUCKET}/${S3_PREFIX}/${S3_YAML_NAME}"
+cp "/opt/ml/code/${S3_YAML_NAME}" "${S3_ROOT}/${S3_PREFIX}/${S3_YAML_NAME}"
 
 # --------------------------------------------------------------------------- #
 # Environment for the modern launch chain
