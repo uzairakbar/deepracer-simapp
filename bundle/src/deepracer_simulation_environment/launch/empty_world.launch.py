@@ -78,10 +78,11 @@ def generate_launch_description():
     # Gazebo server (gz sim) 
     gazebo_server = ExecuteProcess(
         cmd=[
-            'taskset', '-c', PythonExpression([
-                'str(2 * int(', LaunchConfiguration('rollout_idx'), ')) + "," + ',
-                'str(2 * int(', LaunchConfiguration('rollout_idx'), ') + 1)'
-            ]),
+            # NOTE: upstream pins gz to 2 cores via `taskset -c 2*idx,2*idx+1` to
+            # isolate parallel rollout workers. This image is always single-worker
+            # (the ZMQ gym service), so that pin just starves the sim of the other
+            # cores; and on a cgroup-cpuset host (Apptainer --cpus) those fixed core
+            # ids can fall outside the allocation. Let gz use all allocated cores.
             'gz', 'sim',
             world_file_path,
             # Server mode
