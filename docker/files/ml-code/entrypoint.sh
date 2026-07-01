@@ -144,6 +144,12 @@ DEFAULT_YAML=/opt/ml/code/default_training_params.yaml
 echo "WORLD_NAME:                           \"${WORLD_NAME}\""
 echo "SAGEMAKER_SHARED_S3_BUCKET:           \"${S3_BUCKET}\""
 echo "SAGEMAKER_SHARED_S3_PREFIX:           \"${S3_PREFIX}\""
+# Disable the follow ("main") and top ("sub") video cameras: they are extra
+# rendered gz camera sensors used only for the mp4/KVS view, which the ZMQ gym
+# service does not use (P4 renders client-side from the obs). Skipping them drops
+# whole render passes. Read by car_node.py / rollout_worker.py via WorldConfig.
+echo "CAMERA_MAIN_ENABLE:                   \"False\""
+echo "CAMERA_SUB_ENABLE:                    \"False\""
 echo "TRAINING_JOB_ARN:                     \"local-sim\""
 echo "METRICS_S3_BUCKET:                    \"${S3_BUCKET}\""
 echo "METRICS_S3_OBJECT_KEY:                \"${S3_PREFIX}/training_metrics.json\""
