@@ -34,6 +34,11 @@ export DEEPRACER_JOB_TYPE_ENV="SAGEONLY"
 export ROS_IP=127.0.0.1
 export ENABLE_KINESIS=false
 export ENABLE_GUI=false
+# Render engine: force OGRE v1. gz-sim defaults to `ogre2`, whose software
+# rasterizer (no GPU on shared HPC nodes -> llvmpipe) is very slow; OGRE v1 has a
+# far lighter software path (what the fast legacy Gazebo-Classic image used).
+# Measured ~1.6x more steps/sec. read by empty_world.launch.py's render_engine arg.
+export GAZEBO_RENDER_ENGINE=${GAZEBO_RENDER_ENGINE:-ogre}
 
 # Per-user ROS 2 DDS isolation. Apptainer shares the host network namespace
 # (Docker does not), so on a shared node (PACE) every user's nodes default to
