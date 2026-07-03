@@ -4,7 +4,7 @@
 
 import os
 from launch import LaunchDescription
-from launch.actions import DeclareLaunchArgument, IncludeLaunchDescription, ExecuteProcess
+from launch.actions import DeclareLaunchArgument, IncludeLaunchDescription, ExecuteProcess, Shutdown
 from launch.conditions import IfCondition
 from launch.launch_description_sources import PythonLaunchDescriptionSource
 from launch.substitutions import LaunchConfiguration, PathJoinSubstitution, EnvironmentVariable, PythonExpression
@@ -79,7 +79,12 @@ def generate_launch_description():
                 EnvironmentVariable('ROLLOUT_IDX', default_value='0')
             ],
             name='agent',
-            output='screen'
+            output='screen',
+            # Uzair: propagate agent death — markov's log_and_exit kills only
+            # this process; without Shutdown the launch (gazebo included) and
+            # the container linger with a dead ZMQ gym server and the client
+            # blocks silently on recv().
+            on_exit=Shutdown(reason='rollout agent process exited')
         ),
         
     ])
