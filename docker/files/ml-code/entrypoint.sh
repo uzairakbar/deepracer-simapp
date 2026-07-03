@@ -53,7 +53,9 @@ ros_domain_from_user() {
     # ROS 2 safe domain range is 1..101 (0 reserved as the shared default).
     echo $((1 + (16#${hash:0:8} % 101)))
 }
-export ROS_DOMAIN_ID=$(ros_domain_from_user "${USER:-deepracer}")
+# Prefer a per-ENV_ID value injected by the client (so ONE user can run N
+# concurrent sims without DDS cross-talk); fall back to the per-user default.
+export ROS_DOMAIN_ID="${ROS_DOMAIN_ID:-$(ros_domain_from_user "${USER:-deepracer}")}"
 export ROS_AUTOMATIC_DISCOVERY_RANGE=LOCALHOST
 echo "ROS_DOMAIN_ID: ${ROS_DOMAIN_ID} (discovery range: ${ROS_AUTOMATIC_DISCOVERY_RANGE})"
 
@@ -63,7 +65,7 @@ echo "ROS_DOMAIN_ID: ${ROS_DOMAIN_ID} (discovery range: ${ROS_AUTOMATIC_DISCOVER
 # loopback. Container-internal, so it is a harmless default under Docker and the
 # real isolation under Apptainer (mirrors MinIO / ROS_DOMAIN_ID). $USER is the
 # host user under Apptainer and unset->'deepracer' under (network-isolated) Docker.
-export GZ_PARTITION="${USER:-deepracer}"
+export GZ_PARTITION="${GZ_PARTITION:-${USER:-deepracer}}"
 export GZ_IP=127.0.0.1
 echo "GZ_PARTITION: ${GZ_PARTITION} (GZ_IP: ${GZ_IP})"
 
@@ -81,7 +83,26 @@ source /root/anaconda/bin/activate sagemaker_env
 cd /opt/ml/code
 
 # --------------------------------------------------------------------------- #
-# World / object config from the mounted /configs (yq)
+# Materialize /configs from env vars (client injects the specs; no host mount).
+# The deepracer_gym client sends agent_params / environment_params as JSON env
+# vars; write them into the BAKED /configs dir (creating the dir is non-fatal
+# under Apptainer fuse-overlayfs, but writing files into a pre-existing dir
+# works). Falls back to a mounted /configs when the env vars are absent
+# (back-compat). yq accepts JSON, so environment_params may be JSON even though
+# the file keeps its .yaml name. Everything downstream is unchanged.
+# --------------------------------------------------------------------------- #
+mkdir -p /configs 2>/dev/null || true
+if [ -n "${DEEPRACER_AGENT_PARAMS:-}" ]; then
+    printf '%s' "${DEEPRACER_AGENT_PARAMS}" > /configs/agent_params.json
+    echo "Materialized /configs/agent_params.json from env."
+fi
+if [ -n "${DEEPRACER_ENVIRONMENT_PARAMS:-}" ]; then
+    printf '%s' "${DEEPRACER_ENVIRONMENT_PARAMS}" > /configs/environment_params.yaml
+    echo "Materialized /configs/environment_params.yaml from env."
+fi
+
+# --------------------------------------------------------------------------- #
+# World / object config from /configs (yq)
 # --------------------------------------------------------------------------- #
 echo "----------"
 echo "EVALUATION: ${EVALUATION}"
@@ -232,8 +253,12 @@ export GYM_PORT=${GYM_PORT:-8888}
 # --------------------------------------------------------------------------- #
 # Headless display + launch the simulation (no trainer, no redis)
 # --------------------------------------------------------------------------- #
-export DISPLAY=:0
-Xvfb "${DISPLAY}" -ac -screen 0 1400x900x24 > /opt/ml/xvfb.log 2>&1 &
+# Honor a per-ENV_ID display injected by the client so concurrent sims for one
+# user under Apptainer's shared netns don't collide on Xvfb's TCP :6000 socket;
+# -nolisten tcp drops that TCP socket entirely (X clients use the unix socket),
+# which is both faster and removes the collision even if displays coincide.
+export DISPLAY="${DISPLAY:-:0}"
+Xvfb "${DISPLAY}" -ac -nolisten tcp -screen 0 1400x900x24 > /opt/ml/xvfb.log 2>&1 &
 sleep 2
 
 echo "Launching simulation: ros2 launch deepracer_simulation_environment ${SIMULATION_LAUNCH_FILE}"
