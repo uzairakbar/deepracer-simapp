@@ -89,7 +89,14 @@ echo "EVAL_WORLD_NAME: ${EVAL_WORLD_NAME}"
 echo "GYM_PORT: ${GYM_PORT:-8888}"
 echo "----------"
 
+# Uzair: single source of truth for eval mode; the WORLD_NAME choice and the
+# yaml merge decision further below MUST use the same condition.
+EVAL_MODE=false
 if [ "${EVALUATION}" = 'true' ] && [ -n "${EVAL_WORLD_NAME}" ]; then
+    EVAL_MODE=true
+fi
+
+if [ "${EVAL_MODE}" = 'true' ]; then
     WORLD_NAME="${EVAL_WORLD_NAME}"
     echo "Running evaluation mode with ${WORLD_NAME} track."
 else
@@ -188,9 +195,23 @@ echo "NUM_WORKERS:                          \"1\""
 
 S3_YAML_NAME="training_params.yaml"
 SOURCE_YAML=/configs/environment_params.yaml
-# merge defaults (file 0) with /configs overrides (file 1)
-yq eval-all 'select(fileIndex == 0) * select(fileIndex == 1)' "${DEFAULT_YAML}" "${SOURCE_YAML}" \
-    > "/opt/ml/code/${S3_YAML_NAME}"
+if [ "${EVAL_MODE}" = 'true' ]; then
+    # Uzair: eval mode — legacy parity (launch-simapp-rosnodes.sh): NO /configs
+    # merge. Merging environment_params.yaml would clobber WORLD_NAME back to the
+    # training track, splitting gazebo's world (env var) from markov's track
+    # logic (this yaml, via WorldConfig). NUMBER_OF_OBSTACLES/NUMBER_OF_BOT_CARS
+    # are already inlined into DEFAULT_YAML above.
+    cp "${DEFAULT_YAML}" "/opt/ml/code/${S3_YAML_NAME}"
+else
+    # merge defaults (file 0) with /configs overrides (file 1)
+    yq eval-all 'select(fileIndex == 0) * select(fileIndex == 1)' "${DEFAULT_YAML}" "${SOURCE_YAML}" \
+        > "/opt/ml/code/${S3_YAML_NAME}"
+fi
+# Uzair: enforce env/yaml WORLD_NAME agreement in all modes — gazebo loads the
+# world from the env var, markov (TrackData/spawn/progress) reads it from this
+# yaml. They must never diverge.
+yq -i ".WORLD_NAME = \"${WORLD_NAME}\"" "/opt/ml/code/${S3_YAML_NAME}"
+echo "WORLD_NAME check: env=${WORLD_NAME} yaml=$(yq .WORLD_NAME "/opt/ml/code/${S3_YAML_NAME}")"
 cp "/opt/ml/code/${S3_YAML_NAME}" "${S3_ROOT}/${S3_PREFIX}/${S3_YAML_NAME}"
 
 # --------------------------------------------------------------------------- #
