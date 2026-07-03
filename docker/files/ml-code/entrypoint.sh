@@ -237,4 +237,17 @@ Xvfb "${DISPLAY}" -ac -screen 0 1400x900x24 > /opt/ml/xvfb.log 2>&1 &
 sleep 2
 
 echo "Launching simulation: ros2 launch deepracer_simulation_environment ${SIMULATION_LAUNCH_FILE}"
-exec ros2 launch deepracer_simulation_environment "${SIMULATION_LAUNCH_FILE}"
+# Uzair: fail loudly — this launch must never exit in normal operation. Run it
+# in the background with a signal trap (instead of exec) so that docker stop
+# still terminates promptly AND any launch death yields a non-zero container
+# exit with a grep-able FATAL line, instead of a zombie container whose ZMQ gym
+# client hangs silently. Note: ros2 launch often returns 0 even after an
+# abnormal Shutdown action, so exit 1 unconditionally.
+set +e
+ros2 launch deepracer_simulation_environment "${SIMULATION_LAUNCH_FILE}" &
+LAUNCH_PID=$!
+trap 'kill -TERM ${LAUNCH_PID} 2>/dev/null' TERM INT
+wait ${LAUNCH_PID}
+rc=$?
+echo "FATAL: simulation launch exited (rc=${rc}); terminating container." >&2
+exit 1
