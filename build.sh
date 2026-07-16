@@ -110,6 +110,7 @@ if [ "$(docker images -q ${PREFIX}/deepracer-simapp-build-core:${CORE_TAG} 2>/de
     docker buildx build ${OPT_NOCACHE:-} --load --platform "${PLATFORM}" \
         -t ${PREFIX}/deepracer-simapp-build-core:${CORE_TAG} \
         --build-arg BASE_IMAGE="${BASE_IMAGE}" \
+        --build-arg UBUNTU_PORTS_MIRROR="${UBUNTU_PORTS_MIRROR:-}" \
         -f docker/Dockerfile.build-core .
 else
     echo "Core builder image ${PREFIX}/deepracer-simapp-build-core:${CORE_TAG} already exists."
@@ -154,7 +155,8 @@ for variant in $VARIANTS; do
         --build-arg BUNDLE_PREFIX="${PREFIX}" \
         --build-arg BUNDLE_TAG="${BUNDLE_TAG}" \
         --build-arg CORE_IMG="${CORE_IMG}" \
-        --build-arg NVCC_VER="${NVCC_VER}"
+        --build-arg NVCC_VER="${NVCC_VER}" \
+        --build-arg UBUNTU_PORTS_MIRROR="${UBUNTU_PORTS_MIRROR:-}"
     set +x
 
     if [ -n "${OPT_PUSH:-}" ]; then

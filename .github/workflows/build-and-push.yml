@@ -25,6 +25,12 @@ on:
 env:
   IMAGE: ${{ github.event.inputs.image || 'uzairakbar/deepracer-test' }}
   TAG: ${{ github.event.inputs.tag || 'v0' }}
+  # arm64 packages come from ports.ubuntu.com, a single host with recurring
+  # outages; use an independent mirror in CI. (NOT azure.ports.ubuntu.com: from
+  # outside Azure DNS it aliases the same three Canonical IPs as the primary,
+  # so it shares every outage.) Read by build.sh -> Dockerfile.build-core /
+  # .combined; no-op for amd64. Local builds are unaffected (empty default).
+  UBUNTU_PORTS_MIRROR: http://ftp.tu-chemnitz.de/pub/linux/ubuntu-ports
 
 jobs:
   build:

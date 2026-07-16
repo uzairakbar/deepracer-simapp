@@ -8,9 +8,23 @@ FROM ${CORE_IMG}
 ARG NVCC_VER=""
 ARG TF_VER=""
 
-ENV TZ="America/New_York" 
-ENV DEBIAN_FRONTEND="noninteractive" 
-RUN apt update && \ 
+ENV TZ="America/New_York"
+ENV DEBIAN_FRONTEND="noninteractive"
+
+# Uzair: arm64 apt mirror override (same as Dockerfile.build-core -- this
+# stage starts from a fresh ${CORE_IMG}, so it does not inherit that fix).
+# ports.ubuntu.com is the only official arm64 package host and has recurring
+# outages; CI sets UBUNTU_PORTS_MIRROR to Canonical's Azure-internal mirror.
+# Empty default keeps the official host for local builds; no-op on amd64.
+# See Dockerfile.build-core for the full rationale.
+ARG UBUNTU_PORTS_MIRROR=""
+RUN if [ -n "${UBUNTU_PORTS_MIRROR}" ] && [ -f /etc/apt/sources.list.d/ubuntu.sources ]; then \
+        echo "Switching apt ubuntu-ports sources to ${UBUNTU_PORTS_MIRROR}"; \
+        sed -i "s|http://ports.ubuntu.com/ubuntu-ports|${UBUNTU_PORTS_MIRROR}|g" \
+            /etc/apt/sources.list.d/ubuntu.sources; \
+    fi
+
+RUN apt update && \
     apt upgrade -y && \
     apt install --no-install-recommends -y \
     apt-utils \

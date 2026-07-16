@@ -6,6 +6,21 @@ ENV PYTHONWARNINGS="ignore::DeprecationWarning,ignore:::setuptools.command.insta
 ENV ROS_DISTRO=jazzy
 ENV ROS_SNAPSHOT_DATE=2025-11-19
 
+# Uzair: arm64 apt mirror override. ports.ubuntu.com is the ONLY official host
+# for arm64 (ubuntu-ports) packages and has recurring outages that kill CI
+# builds. When UBUNTU_PORTS_MIRROR is set (CI sets Canonical's Azure-internal
+# mirror -- the same one the GitHub runner host itself uses), rewrite the apt
+# sources to it. Empty by default: local builds keep the official host. No-op
+# on amd64, whose sources point at archive.ubuntu.com. Deliberately NOT a
+# reachability probe or apt's mirror+file failover: the outage mode is a
+# flapping host that accepts connections then goes silent, which defeats both.
+ARG UBUNTU_PORTS_MIRROR=""
+RUN if [ -n "${UBUNTU_PORTS_MIRROR}" ] && [ -f /etc/apt/sources.list.d/ubuntu.sources ]; then \
+        echo "Switching apt ubuntu-ports sources to ${UBUNTU_PORTS_MIRROR}"; \
+        sed -i "s|http://ports.ubuntu.com/ubuntu-ports|${UBUNTU_PORTS_MIRROR}|g" \
+            /etc/apt/sources.list.d/ubuntu.sources; \
+    fi
+
 # Bootstrap: install tools needed to add the ROS repo
 RUN apt-get update && apt-get install -y --no-install-recommends \
     sudo \
