@@ -848,6 +848,19 @@ void DeepRacerGazeboSystemPlugin::PostUpdate(const UpdateInfo &/*_info*/,
             }
             
             link_states_cache_[n->Data()] = snapshot;
+            
+            // also cache under "model::link", bare names collide when models
+            // share link names (racecar vs bot_car wheels)
+            auto p = parent_.find(e);
+            while (p != parent_.end() && models_.find(p->second) == models_.end()) {
+                p = parent_.find(p->second);
+            }
+            if (p != parent_.end()) {
+                auto mn = name_by_entity_.find(p->second);
+                if (mn != name_by_entity_.end()) {
+                    link_states_cache_[mn->second + "::" + n->Data()] = snapshot;
+                }
+            }
             return true;
         });
 
