@@ -68,7 +68,10 @@ class BlinkEffect(AbstractEffect):
 
         # Get all model's link names
         body_names = get_model_prop(GetModelProperties.Request(model_name=self.model_name)).body_names
-        link_names = ["%s::%s" % (self.model_name, b) for b in body_names]
+        # body_names already come back "model::link" scoped, don't double-prefix
+        link_names = [b if b.startswith(self.model_name + "::") else "%s::%s" % (self.model_name, b)
+                      for b in body_names]
+
 
         res = get_visual_names(GetVisualNames.Request(link_names=link_names))
         get_visuals_req = GetVisuals.Request(link_names=res.link_names,
