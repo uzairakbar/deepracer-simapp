@@ -42,6 +42,33 @@ void DeepRacerGazeboSystemPlugin::Configure(const Entity &/*_entity*/,
 }
 
 //////////////////////////////////////////////////
+// Link name -> entity, keyed both bare ("left_rear_wheel") and scoped
+// ("racecar::left_rear_wheel"). Bare keys collide across models (racecar vs
+// bot_car wheels), so commands should use scoped names; bare kept for compat.
+static std::unordered_map<std::string, Entity> buildLinkEntityMap(
+    EntityComponentManager &_ecm)
+{
+    std::unordered_map<std::string, Entity> map;
+    _ecm.Each<components::Link, components::Name>(
+        [&](const Entity &e, const components::Link*, const components::Name *n) {
+            map[n->Data()] = e;
+            Entity p = e;
+            while (true) {
+                auto *pc = _ecm.Component<components::ParentEntity>(p);
+                if (!pc) break;
+                p = pc->Data();
+                if (_ecm.Component<components::Model>(p)) {
+                    auto *mn = _ecm.Component<components::Name>(p);
+                    if (mn) map[mn->Data() + "::" + n->Data()] = e;
+                    break;
+                }
+            }
+            return true;
+        });
+    return map;
+}
+
+//////////////////////////////////////////////////
 void DeepRacerGazeboSystemPlugin::PreUpdate(const UpdateInfo &/*_info*/,
                                            EntityComponentManager &_ecm)
 {
@@ -221,15 +248,8 @@ void DeepRacerGazeboSystemPlugin::PreUpdate(const UpdateInfo &/*_info*/,
         
         if (!link_state_commands_.empty()) {
             // Build entity maps once for all link commands
-            std::unordered_map<std::string, Entity> linkEntityMap;
-            std::unordered_map<std::string, Entity> referenceEntityMap;
-            
-            _ecm.Each<components::Link, components::Name>(
-                [&](const Entity &e, const components::Link*, const components::Name *n) {
-                    linkEntityMap[n->Data()] = e;
-                    referenceEntityMap[n->Data()] = e;
-                    return true;
-                });
+            auto linkEntityMap = buildLinkEntityMap(_ecm);
+            std::unordered_map<std::string, Entity> referenceEntityMap(linkEntityMap);
             _ecm.Each<components::Model, components::Name>(
                 [&](const Entity &e, const components::Model*, const components::Name *n) {
                     referenceEntityMap[n->Data()] = e;
@@ -329,13 +349,7 @@ void DeepRacerGazeboSystemPlugin::PreUpdate(const UpdateInfo &/*_info*/,
         std::lock_guard<std::mutex> lock(command_queue_mtx_);
         
         if (!visual_color_commands_.empty()) {
-            // Build link entity map once for all visual commands
-            std::unordered_map<std::string, Entity> linkEntityMap;
-            _ecm.Each<components::Link, components::Name>(
-                [&](const Entity &e, const components::Link*, const components::Name *n) {
-                    linkEntityMap[n->Data()] = e;
-                    return true;
-                });
+            auto linkEntityMap = buildLinkEntityMap(_ecm);
             
             while (!visual_color_commands_.empty()) {
                 auto cmd = visual_color_commands_.front();
@@ -415,12 +429,7 @@ void DeepRacerGazeboSystemPlugin::PreUpdate(const UpdateInfo &/*_info*/,
         std::lock_guard<std::mutex> lock(command_queue_mtx_);
         
         if (!visual_transparency_commands_.empty()) {
-            std::unordered_map<std::string, Entity> linkEntityMap;
-            _ecm.Each<components::Link, components::Name>(
-                [&](const Entity &e, const components::Link*, const components::Name *n) {
-                    linkEntityMap[n->Data()] = e;
-                    return true;
-                });
+            auto linkEntityMap = buildLinkEntityMap(_ecm);
             
             while (!visual_transparency_commands_.empty()) {
                 auto cmd = visual_transparency_commands_.front();
@@ -487,12 +496,7 @@ void DeepRacerGazeboSystemPlugin::PreUpdate(const UpdateInfo &/*_info*/,
         std::lock_guard<std::mutex> lock(command_queue_mtx_);
         
         if (!visual_visible_commands_.empty()) {
-            std::unordered_map<std::string, Entity> linkEntityMap;
-            _ecm.Each<components::Link, components::Name>(
-                [&](const Entity &e, const components::Link*, const components::Name *n) {
-                    linkEntityMap[n->Data()] = e;
-                    return true;
-                });
+            auto linkEntityMap = buildLinkEntityMap(_ecm);
             
             while (!visual_visible_commands_.empty()) {
                 auto cmd = visual_visible_commands_.front();
@@ -528,12 +532,7 @@ void DeepRacerGazeboSystemPlugin::PreUpdate(const UpdateInfo &/*_info*/,
         std::lock_guard<std::mutex> lock(command_queue_mtx_);
         
         if (!visual_pose_commands_.empty()) {
-            std::unordered_map<std::string, Entity> linkEntityMap;
-            _ecm.Each<components::Link, components::Name>(
-                [&](const Entity &e, const components::Link*, const components::Name *n) {
-                    linkEntityMap[n->Data()] = e;
-                    return true;
-                });
+            auto linkEntityMap = buildLinkEntityMap(_ecm);
             
             while (!visual_pose_commands_.empty()) {
                 auto cmd = visual_pose_commands_.front();
@@ -575,12 +574,7 @@ void DeepRacerGazeboSystemPlugin::PreUpdate(const UpdateInfo &/*_info*/,
         std::lock_guard<std::mutex> lock(command_queue_mtx_);
         
         if (!visual_mesh_commands_.empty()) {
-            std::unordered_map<std::string, Entity> linkEntityMap;
-            _ecm.Each<components::Link, components::Name>(
-                [&](const Entity &e, const components::Link*, const components::Name *n) {
-                    linkEntityMap[n->Data()] = e;
-                    return true;
-                });
+            auto linkEntityMap = buildLinkEntityMap(_ecm);
             
             while (!visual_mesh_commands_.empty()) {
                 auto cmd = visual_mesh_commands_.front();
@@ -848,7 +842,7 @@ void DeepRacerGazeboSystemPlugin::PostUpdate(const UpdateInfo &/*_info*/,
             }
             
             link_states_cache_[n->Data()] = snapshot;
-            
+
             // also cache under "model::link", bare names collide when models
             // share link names (racecar vs bot_car wheels)
             auto p = parent_.find(e);
@@ -871,11 +865,24 @@ void DeepRacerGazeboSystemPlugin::PostUpdate(const UpdateInfo &/*_info*/,
             
             auto linkNameIt = name_by_entity_.find(p->Data());
             if (linkNameIt == name_by_entity_.end()) return true;
-            
-            std::string key = linkNameIt->second + "::" + n->Data();
-            
+
+            // key by "model::link::visual" — bare link names collide when models
+            // share link names (racecar vs bot_car wheels)
+            std::string scoped_link = linkNameIt->second;
+            auto mp = parent_.find(p->Data());
+            while (mp != parent_.end() && models_.find(mp->second) == models_.end()) {
+                mp = parent_.find(mp->second);
+            }
+            if (mp != parent_.end()) {
+                auto mn = name_by_entity_.find(mp->second);
+                if (mn != name_by_entity_.end()) {
+                    scoped_link = mn->second + "::" + scoped_link;
+                }
+            }
+            std::string key = scoped_link + "::" + n->Data();
+
             VisualStateSnapshot snapshot;
-            snapshot.link_name = linkNameIt->second;
+            snapshot.link_name = scoped_link;
             
             auto poseComp = _ecm.Component<components::Pose>(e);
             if (poseComp) {
@@ -1193,30 +1200,38 @@ void DeepRacerGazeboSystemPlugin::getVisualNamesCallback(
         bool get_all = request->link_names.empty();
         
         for (const auto &[key, snapshot] : visual_states_cache_) {
-            size_t separator = key.find("::");
+            // key is "model::link::visual" — split at the LAST "::"
+            size_t separator = key.rfind("::");
             if (separator == std::string::npos) continue;
-            
-            std::string link_name = key.substr(0, separator);
+
+            std::string link_name = key.substr(0, separator);   // "model::link"
             std::string visual_name = key.substr(separator + 2);
-            
+
             if (!get_all) {
+                // bare tail of the cached link ("model::link" -> "link")
+                size_t tail_sep = link_name.rfind("::");
+                std::string bare = (tail_sep == std::string::npos)
+                    ? link_name : link_name.substr(tail_sep + 2);
+
                 bool found = false;
                 for (const auto &requested_link : request->link_names) {
-                    // Fix: Strip model prefix (e.g., "racecar::base_link" -> "base_link")
-                    std::string requested_link_stripped = requested_link;
-                    size_t prefix_sep = requested_link.find("::");
-                    if (prefix_sep != std::string::npos) {
-                        requested_link_stripped = requested_link.substr(prefix_sep + 2);
-                    }
-                    
-                    if (requested_link_stripped == link_name) {
-                        found = true;
-                        break;
+                    // callers send "model::link", bare "link", or accidentally
+                    // "model::model::link" — normalize to the last two segments
+                    std::string req = requested_link;
+                    size_t last = req.rfind("::");
+                    if (last != std::string::npos) {
+                        size_t prev = req.rfind("::", last - 1);
+                        if (prev != std::string::npos) {
+                            req = req.substr(prev + 2);
+                        }
+                        if (req == link_name) { found = true; break; }
+                    } else if (req == bare) {
+                        found = true; break;
                     }
                 }
                 if (!found) continue;
             }
-            
+
             response->visual_names.push_back(visual_name);
             response->link_names.push_back(link_name);
         }
