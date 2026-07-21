@@ -8,11 +8,13 @@
 #include <deepracer_msgs/srv/set_model_states.hpp>
 #include <deepracer_msgs/srv/get_link_states.hpp>
 #include <deepracer_msgs/srv/set_link_states.hpp>
+#include <deepracer_msgs/srv/get_visual_names.hpp>
 
 #include <gz/sim/EntityComponentManager.hh>
 #include <gz/sim/EventManager.hh>
 #include <gz/sim/components/Model.hh>
 #include <gz/sim/components/Link.hh>
+#include <gz/sim/components/Visual.hh>
 #include <gz/sim/components/Name.hh>
 #include <gz/sim/components/Pose.hh>
 #include <gz/sim/components/LinearVelocity.hh>
@@ -427,4 +429,46 @@ TEST_F(DeepRacerPluginModelLinkStatesTest, GetLinkStatesScopedNamesDisambiguateD
     EXPECT_NEAR(response->link_states[0].pose.position.y, 1.0, 1e-6);
     EXPECT_NEAR(response->link_states[1].pose.position.x, 9.0, 1e-6);
     EXPECT_NEAR(response->link_states[1].pose.position.y, 9.0, 1e-6);
+}
+
+TEST_F(DeepRacerPluginModelLinkStatesTest, GetVisualNamesScopedDisambiguatesDuplicateLinks)
+{
+    // duplicate link names across models: scoped request must only return the
+    // requested model's visuals, with scoped link names in the response
+    auto racecar = CreateModel("racecar");
+    auto botCar = CreateModel("bot_car_0");
+    auto racecarWheel = CreateLink("left_rear_wheel", racecar);
+    auto botCarWheel = CreateLink("left_rear_wheel", botCar);
+
+    auto makeVisual = [&](const std::string& name, gz::sim::Entity parentLink) {
+        gz::sim::Entity e = realECM_->CreateEntity();
+        realECM_->CreateComponent(e, gz::sim::components::Visual());
+        realECM_->CreateComponent(e, gz::sim::components::Name(name));
+        realECM_->CreateComponent(e, gz::sim::components::ParentEntity(parentLink));
+        return e;
+    };
+    makeVisual("wheel_visual", racecarWheel);
+    makeVisual("wheel_visual", botCarWheel);
+
+    gz::sim::UpdateInfo updateInfo;
+    plugin_->PostUpdate(updateInfo, *realECM_);
+
+    auto node = rclcpp::Node::make_shared("test_client");
+    auto client = node->create_client<deepracer_msgs::srv::GetVisualNames>("/get_visual_names");
+    ASSERT_TRUE(client->wait_for_service(std::chrono::seconds(5)));
+
+    auto request = std::make_shared<deepracer_msgs::srv::GetVisualNames::Request>();
+    request->link_names = {"racecar::left_rear_wheel"};
+
+    auto future = client->async_send_request(request);
+    auto executor = rclcpp::executors::SingleThreadedExecutor();
+    executor.add_node(node);
+    auto status = executor.spin_until_future_complete(future, std::chrono::seconds(5));
+    ASSERT_EQ(status, rclcpp::FutureReturnCode::SUCCESS);
+
+    auto response = future.get();
+    EXPECT_TRUE(response->success);
+    ASSERT_EQ(response->visual_names.size(), 1u);
+    EXPECT_EQ(response->visual_names[0], "wheel_visual");
+    EXPECT_EQ(response->link_names[0], "racecar::left_rear_wheel");
 }
