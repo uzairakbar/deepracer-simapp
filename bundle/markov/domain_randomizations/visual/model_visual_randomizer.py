@@ -80,7 +80,10 @@ class ModelVisualRandomizer(AbstractRandomizer):
 
         # Get all model's link names
         body_names = get_model_prop(GetModelProperties.Request(model_name=self.model_name)).body_names
-        link_names = ["%s::%s" % (model_name, b) for b in body_names]
+        # body_names already come back "model::link" scoped, don't double-prefix
+        link_names = [b if b.startswith(model_name + "::") else "%s::%s" % (model_name, b)
+                      for b in body_names]
+
 
         # Convert filters to sets
         link_name_filter = set(link_name_filter) if link_name_filter is not None else None
