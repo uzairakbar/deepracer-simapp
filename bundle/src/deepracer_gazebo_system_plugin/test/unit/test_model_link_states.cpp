@@ -383,3 +383,48 @@ TEST_F(DeepRacerPluginModelLinkStatesTest, GetLinkStatesBasic)
     EXPECT_NEAR(response->link_states[0].twist.linear.y, 0.2, 1e-6);
     EXPECT_NEAR(response->link_states[0].twist.linear.z, 0.3, 1e-6);
 }
+
+TEST_F(DeepRacerPluginModelLinkStatesTest, GetLinkStatesScopedNamesDisambiguateDuplicateLinks)
+{
+    // racecar and bot_car share wheel link names; scoped lookups must return
+    // each model's own link, not whichever won the bare-name cache slot
+    auto racecar = CreateModel("racecar");
+    auto botCar = CreateModel("bot_car_0");
+    gz::math::Pose3d racecarWheelPose(1.0, 1.0, 0.0, 0.0, 0.0, 0.0);
+    gz::math::Pose3d botCarWheelPose(9.0, 9.0, 0.0, 0.0, 0.0, 0.0);
+    CreateLink("left_rear_wheel", racecar, racecarWheelPose);
+    CreateLink("left_rear_wheel", botCar, botCarWheelPose);
+
+    // rebuild snapshot cache with the new entities
+    gz::sim::UpdateInfo updateInfo;
+    plugin_->PostUpdate(updateInfo, *realECM_);
+
+    auto node = rclcpp::Node::make_shared("test_client");
+    auto client = node->create_client<deepracer_msgs::srv::GetLinkStates>("/get_link_states");
+    ASSERT_TRUE(client->wait_for_service(std::chrono::seconds(5)));
+
+    auto request = std::make_shared<deepracer_msgs::srv::GetLinkStates::Request>();
+    request->link_names = {"racecar::left_rear_wheel", "bot_car_0::left_rear_wheel",
+                           "left_rear_wheel"};
+    request->reference_frames = {"world", "world", "world"};
+
+    auto future = client->async_send_request(request);
+    auto executor = rclcpp::executors::SingleThreadedExecutor();
+    executor.add_node(node);
+    auto status = executor.spin_until_future_complete(future, std::chrono::seconds(5));
+    ASSERT_EQ(status, rclcpp::FutureReturnCode::SUCCESS);
+
+    auto response = future.get();
+    EXPECT_TRUE(response->success);
+    ASSERT_EQ(response->link_states.size(), 3);
+    EXPECT_EQ(response->status[0], 1);
+    EXPECT_EQ(response->status[1], 1);
+    // bare name still resolves (back-compat), but which model wins is undefined
+    EXPECT_EQ(response->status[2], 1);
+
+    // each scoped lookup returns its own model's wheel
+    EXPECT_NEAR(response->link_states[0].pose.position.x, 1.0, 1e-6);
+    EXPECT_NEAR(response->link_states[0].pose.position.y, 1.0, 1e-6);
+    EXPECT_NEAR(response->link_states[1].pose.position.x, 9.0, 1e-6);
+    EXPECT_NEAR(response->link_states[1].pose.position.y, 9.0, 1e-6);
+}
