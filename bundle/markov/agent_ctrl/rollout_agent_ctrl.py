@@ -623,6 +623,9 @@ class RolloutCtrl(AgentCtrlInterface, ObserverInterface, AbstractTracker):
             LOG.debug("Link states exist but first element is None")
         
         link_points = [self.make_link_points(link_state) for link_state in link_states if link_state is not None]
+        if len(link_points) != len(self._agent_link_name_list_):
+            LOG.error("Some link states missing (%s), off-track check unreliable this step",
+                      self._agent_link_name_list_)
 
         current_car_pose = car_model_state.pose
         try:
