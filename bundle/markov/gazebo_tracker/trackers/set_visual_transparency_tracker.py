@@ -98,9 +98,10 @@ class SetVisualTransparencyTracker(AbstractTracker):
             if self.visual_name_map.values():
                 req = SetVisualTransparencies.Request()
 
-                req.visual_names = self.visual_name_map.values()
-                req.link_names = self.link_name_map.values()
-                req.transparencies = self.transparency_map.values()
+                # ROS2 message arrays need lists, not dict views
+                req.visual_names = list(self.visual_name_map.values())
+                req.link_names = list(self.link_name_map.values())
+                req.transparencies = list(self.transparency_map.values())
                 self.set_visual_transparencies(req)
 
             self.visual_name_map = OrderedDict()
