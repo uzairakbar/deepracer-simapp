@@ -22,7 +22,8 @@ from markov.domain_randomizations.constants import GazeboServiceName
 from markov.rclpy_wrappers import ServiceProxyWrapper
 from markov.gazebo_tracker.abs_tracker import AbstractTracker
 import markov.gazebo_tracker.constants as consts
-from deepracer_msgs.srv import SetVisualColors
+from deepracer_msgs.srv import SetVisualColor, SetVisualColors
+
 
 
 class SetVisualColorTracker(AbstractTracker):
@@ -114,12 +115,13 @@ class SetVisualColorTracker(AbstractTracker):
             if self.visual_name_map.values():
                 req = SetVisualColors.Request()
 
-                req.visual_names = self.visual_name_map.values()
-                req.link_names = self.link_name_map.values()
-                req.ambients = self.ambient_map.values()
-                req.diffuses = self.diffuse_map.values()
-                req.speculars = self.specular_map.values()
-                req.emissives = self.emissive_map.values()
+                # ROS2 message arrays need lists, not dict views
+                req.visual_names = list(self.visual_name_map.values())
+                req.link_names = list(self.link_name_map.values())
+                req.ambients = list(self.ambient_map.values())
+                req.diffuses = list(self.diffuse_map.values())
+                req.speculars = list(self.specular_map.values())
+                req.emissives = list(self.emissive_map.values())
                 self.set_visual_colors(req)
 
             self.visual_name_map = OrderedDict()
